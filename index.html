@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Angina Adventure - Final Upgrade</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;600&display=swap" rel="stylesheet">
+
+<style>
+body{
+margin:0;
+overflow:hidden;
+background:#111;
+font-family:'Quicksand', sans-serif;
+}
+canvas{
+display:block;
+margin:auto;
+background:#7a0f0f;
+}
+</style>
+</head>
+
+<body>
+
+<canvas id="game" width="1200" height="650"></canvas>
+
+<script>
+
+/* ================= AUDIO (HEARTBEAT) ================= */
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+function heartbeat(volume){
+const osc = audioCtx.createOscillator();
+const gain = audioCtx.createGain();
+
+osc.type="sine";
+osc.frequency.value=60;
+
+gain.gain.value=volume;
+
+osc.connect(gain);
+gain.connect(audioCtx.destination);
+
+osc.start();
+osc.stop(audioCtx.currentTime + 0.08);
+}
+
+/* ================= CANVAS ================= */
+const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+
+/* STATE */
+let state="menu";
+
+/* INPUT */
+const keys={};
+document.addEventListener("keydown",e=>keys[e.key]=true);
+document.addEventListener("keyup",e=>keys[e.key]=false);
+
+/* WORLD */
+const WORLD_WIDTH=4500;
+let cameraX=0;
+
+/* PLAYER */
+const player={x:100,y:500,w:40,h:40,vx:0,vy:0,jumps:2};
+const gravity=0.7;
+
+/* GAME */
+let oxygen=60;
+let lives=3;
+
+/* HEART */
+const heart={x:4200,y:380,w:90,h:90};
+let heartPulse=0;
+
+/* PLAQUES */
+const plaques=[];
+for(let i=0;i<6;i++){
+plaques.push({x:600+i*500,y:520,w:60,h:60,speed:1.5+Math.random()});
+}
+
+/* FINAL WAVE PLAQUES */
+const finalWave=[];
+
+/* PLATFORMS */
+const platforms=[
+{x:0,y:550,w:4500,h:100},
+{x:250,y:470,w:180,h:20},
+{x:500,y:400,w:180,h:20},
+{x:800,y:340,w:180,h:20},
+{x:1100,y:280,w:180,h:20},
+{x:1400,y:340,w:180,h:20},
+{x:1700,y:400,w:180,h:20},
+{x:2000,y:300,w:180,h:20},
+{x:2300,y:240,w:180,h:20},
+{x:2600,y:300,w:180,h:20},
+{x:2900,y:360,w:180,h:20},
+{x:3200,y:300,w:180,h:20},
+{x:3500,y:260,w:180,h:20}
+];
+
+/* OXYGEN COINS */
+const oxygenCoins=[];
+for(let i=0;i<25;i++){
+oxygenCoins.push({x:300+i*170,y:200+Math.random()*250,taken:false});
+}
+
+/* BULLETS */
+const bullets=[];
+
+/* COLLISION */
+function hit(a,b){
+return a.x<b.x+b.w &&
+a.x+a.w>b.x &&
+a.y<b.y+b.h &&
+a.y+a.h>b.y;
+}
+
+/* DRAW PLAYER */
+function drawCell(x,y){
+ctx.fillStyle="#d60000";
+ctx.beginPath();
+ctx.ellipse(x,y,22,15,0,0,Math.PI*2);
+ctx.fill();
+ctx.fillStyle="#ff9aa9";
+ctx.beginPath();
+ctx.ellipse(x,y,10,6,0,0,Math.PI*2);
+ctx.fill();
+}
+
+/* SHOOT */
+function shoot(){
+bullets.push({x:player.x+20,y:player.y+20,vx:10,w:10,h:4});
+}
+
+/* RESET */
+function reset(){
+player.x=100;player.y=500;
+player.vx=0;player.vy=0;
+player.jumps=2;
+
+oxygen=60;
+lives=3;
+
+bullets.length=0;
+finalWave.length=0;
+
+state="play";
+}
+
+/* LIFE */
+function loseLife(){
+lives--;
+player.x=100;
+player.y=500;
+if(lives<=0) state="lose";
+}
+
+/* ================= UPDATE ================= */
+function update(){
+
+if(state!=="play") return;
+
+/* FAST OXYGEN LOSS */
+oxygen-=0.06;
+if(oxygen<=0) loseLife();
+
+/* movement */
+if(keys["ArrowRight"]) player.vx=5;
+else if(keys["ArrowLeft"]) player.vx=-5;
+else player.vx=0;
+
+/* jump */
+if((keys[" "]||keys["ArrowUp"]) && player.jumps>0){
+player.vy=-14;
+player.jumps--;
+}
+
+/* shoot */
+if(keys["f"]){
+if(!player.fired){shoot();player.fired=true;}
+}else player.fired=false;
+
+/* physics */
+player.vy+=gravity;
+player.x+=player.vx;
+player.y+=player.vy;
+
+/* ground */
+if(player.y>520){
+player.y=520;
+player.vy=0;
+player.jumps=2;
+}
+
+/* camera */
+cameraX=player.x-400;
+if(cameraX<0) cameraX=0;
+if(cameraX>WORLD_WIDTH-1200) cameraX=WORLD_WIDTH-1200;
+
+/* platforms */
+platforms.forEach(p=>{
+if(hit(player,p)&&player.vy>=0){
+player.y=p.y-player.h;
+player.vy=0;
+player.jumps=2;
+}
+});
+
+/* oxygen coins */
+oxygenCoins.forEach(c=>{
+if(!c.taken && hit(player,{x:c.x,y:c.y,w:20,h:20})){
+c.taken=true;
+oxygen=Math.min(100,oxygen+10);
+}
+});
+
+/* plaques */
+plaques.forEach(p=>{
+if(player.x<p.x) p.x-=p.speed;
+else p.x+=p.speed;
+
+if(hit(player,p)) loseLife();
+
+/* bullets kill plaques */
+for(let i=bullets.length-1;i>=0;i--){
+if(hit(bullets[i],p)){
+plaques.splice(plaques.indexOf(p),1);
+bullets.splice(i,1);
+break;
+}
+}
+});
+
+/* FINAL WAVE (spawns near end) */
+if(player.x>3500 && finalWave.length===0){
+for(let i=0;i<5;i++){
+finalWave.push({x:3800+i*80,y:500,w:50,h:50,speed:2});
+}
+}
+
+finalWave.forEach(p=>{
+if(player.x<p.x) p.x-=p.speed;
+else p.x+=p.speed;
+
+if(hit(player,p)) loseLife();
+
+for(let i=bullets.length-1;i>=0;i--){
+if(hit(bullets[i],p)){
+finalWave.splice(finalWave.indexOf(p),1);
+bullets.splice(i,1);
+break;
+}
+}
+});
+
+/* bullets */
+for(let i=bullets.length-1;i>=0;i--){
+bullets[i].x+=bullets[i].vx;
+if(bullets[i].x>WORLD_WIDTH) bullets.splice(i,1);
+}
+
+/* HEART BEAT SOUND */
+heartPulse+=0.12;
+if(Math.sin(heartPulse)>0.98){
+heartbeat(0.08 + (1-oxygen/100)*0.2);
+}
+
+/* WIN */
+if(hit(player,heart)){
+state="win";
+}
+}
+
+/* ================= HEART DRAW ================= */
+function drawHeart(x,y,size){
+let pulse=Math.sin(heartPulse)*8;
+
+ctx.fillStyle="#ff3366";
+
+ctx.beginPath();
+ctx.moveTo(x,y+size/4);
+ctx.bezierCurveTo(x,y,x-size/2,y,x-size/2,y+size/3);
+ctx.bezierCurveTo(x-size/2,y+size/1.5,x,y+size,x,y+size*1.2);
+ctx.bezierCurveTo(x,y+size,x+size/2,y+size/1.5,x+size/2,y+size/3);
+ctx.bezierCurveTo(x+size/2,y,x,y,x,y+size/4);
+ctx.fill();
+
+/* pulse glow */
+ctx.beginPath();
+ctx.globalAlpha=0.4;
+ctx.arc(x,y,40+pulse,0,Math.PI*2);
+ctx.fill();
+ctx.globalAlpha=1;
+}
+
+/* ================= MENU ================= */
+function drawMenu(){
+ctx.clearRect(0,0,1200,650);
+ctx.fillStyle="#8b0000";
+ctx.fillRect(0,0,1200,650);
+
+ctx.fillStyle="#fff";
+ctx.textAlign="center";
+
+ctx.font="50px Quicksand";
+ctx.fillText("❤️ Angina Adventure",600,120);
+
+ctx.font="18px Quicksand";
+ctx.fillText("Collect oxygen. Survive plaques. Reach the heart.",600,240);
+ctx.fillText("Final area gets harder with a plaque rush.",600,270);
+
+ctx.fillText("Arrow Keys Move | SPACE Jump | F Shoot",600,340);
+
+ctx.fillStyle="#00ff99";
+ctx.fillText("Press ENTER to start",600,500);
+}
+
+/* ================= DRAW ================= */
+function draw(){
+
+ctx.clearRect(0,0,1200,650);
+
+/* oxygen pain overlay */
+ctx.fillStyle=`rgba(0,0,0,${1-oxygen/100})`;
+ctx.fillRect(0,0,1200,650);
+
+/* platforms */
+platforms.forEach(p=>{
+ctx.fillStyle="#b22222";
+ctx.fillRect(p.x-cameraX,p.y,p.w,p.h);
+});
+
+/* oxygen coins */
+oxygenCoins.forEach(c=>{
+if(!c.taken){
+ctx.fillStyle="#7fffd4";
+ctx.beginPath();
+ctx.arc(c.x-cameraX,c.y,8,0,Math.PI*2);
+ctx.fill();
+}
+});
+
+/* plaques */
+plaques.forEach(p=>{
+ctx.fillStyle="#ffd700";
+ctx.beginPath();
+ctx.ellipse(p.x-cameraX,p.y,p.w/2,p.h/2,0,0,Math.PI*2);
+ctx.fill();
+});
+
+/* final wave */
+finalWave.forEach(p=>{
+ctx.fillStyle="#ff0000";
+ctx.fillRect(p.x-cameraX,p.y,p.w,p.h);
+});
+
+/* bullets */
+ctx.fillStyle="cyan";
+bullets.forEach(b=>{
+ctx.fillRect(b.x-cameraX,b.y,b.w,b.h);
+});
+
+/* player */
+drawCell(player.x-cameraX+20,player.y+20);
+
+/* heart */
+drawHeart(heart.x-cameraX,heart.y,80);
+
+/* UI */
+ctx.fillStyle="#fff";
+ctx.font="18px Quicksand";
+ctx.fillText("Lives: "+lives,20,30);
+ctx.fillText("Oxygen: "+Math.floor(oxygen),20,60);
+
+/* win/lose */
+if(state==="lose"){
+ctx.font="60px Quicksand";
+ctx.fillText("ANGINA ATTACK",300,300);
+}
+
+if(state==="win"){
+ctx.font="60px Quicksand";
+ctx.fillText("HEART REACHED!",320,300);
+}
+}
+
+/* ================= LOOP ================= */
+function loop(){
+
+if(state==="menu" && keys["Enter"]) reset();
+if(state==="lose" && keys["r"]) reset();
+
+update();
+
+if(state==="menu") drawMenu();
+else draw();
+
+requestAnimationFrame(loop);
+}
+
+loop();
+
+</script>
+
+</body>
+</html>
