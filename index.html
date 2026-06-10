@@ -2,30 +2,218 @@
 <html>
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Angina Adventure - Final Upgrade</title>
 
 <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;600&display=swap" rel="stylesheet">
 
 <style>
+* {
+  box-sizing: border-box;
+}
+
 body{
 margin:0;
 overflow:hidden;
 background:#111;
 font-family:'Quicksand', sans-serif;
 }
+
 canvas{
 display:block;
 margin:auto;
 background:#7a0f0f;
+max-width: 100vw;
+max-height: 100vh;
+}
+
+#controls {
+  display: none;
+  position: absolute;
+  bottom: 20px;
+  width: 100%;
+  text-align: center;
+  z-index: 100;
+}
+
+.button-group {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 0 10px;
+}
+
+button {
+  padding: 15px 20px;
+  font-size: 16px;
+  background: #ff3366;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-family: 'Quicksand', sans-serif;
+  font-weight: 600;
+}
+
+button:active {
+  opacity: 0.7;
+}
+
+#leaderboard {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(0,0,0,0.8);
+  color: white;
+  padding: 15px;
+  border-radius: 5px;
+  font-size: 12px;
+  z-index: 50;
+  min-width: 180px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+#leaderboard h3 {
+  margin: 0 0 10px 0;
+  color: #7fffd4;
+  font-size: 14px;
+}
+
+#leaderboard ol {
+  margin: 0;
+  padding-left: 20px;
+}
+
+#leaderboard li {
+  margin: 5px 0;
+  list-style: decimal;
+}
+
+.score-entry {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.score-name {
+  color: #00ff99;
+}
+
+.score-value {
+  color: #7fffd4;
+}
+
+@media (max-width: 768px) {
+  canvas {
+    max-width: 100vw;
+    max-height: calc(100vh - 200px);
+  }
+  
+  #controls {
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .button-group {
+    flex-direction: column;
+  }
+  
+  button {
+    width: 100%;
+    padding: 12px;
+    font-size: 14px;
+  }
+  
+  #leaderboard {
+    font-size: 11px;
+    min-width: 150px;
+    padding: 10px;
+  }
 }
 </style>
 </head>
 
 <body>
 
-<canvas id="game" width="1200" height="650"></canvas>
+<div id="leaderboard">
+  <h3>🏆 TOP SCORES</h3>
+  <ol id="scores-list"></ol>
+</div>
+
+<canvas id="game"></canvas>
+
+<div id="controls">
+  <div class="button-group" id="movement-controls">
+    <button id="left-btn">← LEFT</button>
+    <button id="jump-btn">↑ JUMP</button>
+    <button id="right-btn">→ RIGHT</button>
+    <button id="shoot-btn">🔫 SHOOT</button>
+  </div>
+</div>
 
 <script>
+
+/* ================= LEADERBOARD ================= */
+class Leaderboard {
+  constructor() {
+    this.scores = this.loadScores();
+  }
+  
+  loadScores() {
+    const saved = localStorage.getItem('anginaScores');
+    return saved ? JSON.parse(saved) : [];
+  }
+  
+  saveScores() {
+    localStorage.setItem('anginaScores', JSON.stringify(this.scores));
+  }
+  
+  addScore(name, score) {
+    this.scores.push({ name, score, date: new Date().toLocaleDateString() });
+    this.scores.sort((a, b) => b.score - a.score);
+    this.scores = this.scores.slice(0, 10);
+    this.saveScores();
+  }
+  
+  getTopScores() {
+    return this.scores.slice(0, 10);
+  }
+  
+  render() {
+    const list = document.getElementById('scores-list');
+    list.innerHTML = '';
+    this.getTopScores().forEach((entry, idx) => {
+      const li = document.createElement('li');
+      li.innerHTML = `<span class="score-name">${entry.name}</span> <span class="score-value">${Math.floor(entry.score)}</span>`;
+      list.appendChild(li);
+    });
+  }
+}
+
+const leaderboard = new Leaderboard();
+
+function updateLeaderboard() {
+  leaderboard.render();
+}
+
+/* ================= RESPONSIVE CANVAS ================= */
+function resizeCanvas() {
+  const canvas = document.getElementById('game');
+  const isMobile = window.innerWidth <= 768;
+  
+  if (isMobile) {
+    canvas.width = Math.min(window.innerWidth, 800);
+    canvas.height = Math.min(window.innerHeight - 200, 600);
+  } else {
+    canvas.width = 1200;
+    canvas.height = 650;
+  }
+}
+
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
 
 /* ================= AUDIO (HEARTBEAT) ================= */
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -52,11 +240,36 @@ const ctx=canvas.getContext("2d");
 
 /* STATE */
 let state="menu";
+let playerName = "Player";
 
 /* INPUT */
 const keys={};
 document.addEventListener("keydown",e=>keys[e.key]=true);
 document.addEventListener("keyup",e=>keys[e.key]=false);
+
+/* MOBILE CONTROLS */
+const isMobile = window.innerWidth <= 768;
+
+if (isMobile) {
+  document.getElementById('controls').style.display = 'flex';
+  
+  const leftBtn = document.getElementById('left-btn');
+  const rightBtn = document.getElementById('right-btn');
+  const jumpBtn = document.getElementById('jump-btn');
+  const shootBtn = document.getElementById('shoot-btn');
+  
+  leftBtn.addEventListener('touchstart', () => keys['ArrowLeft'] = true);
+  leftBtn.addEventListener('touchend', () => keys['ArrowLeft'] = false);
+  
+  rightBtn.addEventListener('touchstart', () => keys['ArrowRight'] = true);
+  rightBtn.addEventListener('touchend', () => keys['ArrowRight'] = false);
+  
+  jumpBtn.addEventListener('touchstart', () => keys[' '] = true);
+  jumpBtn.addEventListener('touchend', () => keys[' '] = false);
+  
+  shootBtn.addEventListener('touchstart', () => keys['f'] = true);
+  shootBtn.addEventListener('touchend', () => keys['f'] = false);
+}
 
 /* WORLD */
 const WORLD_WIDTH=4500;
@@ -69,6 +282,7 @@ const gravity=0.7;
 /* GAME */
 let oxygen=60;
 let lives=3;
+let score=0;
 
 /* HEART */
 const heart={x:4200,y:380,w:90,h:90};
@@ -142,6 +356,7 @@ player.jumps=2;
 
 oxygen=60;
 lives=3;
+score=0;
 
 bullets.length=0;
 finalWave.length=0;
@@ -154,7 +369,12 @@ function loseLife(){
 lives--;
 player.x=100;
 player.y=500;
-if(lives<=0) state="lose";
+if(lives<=0) {
+  state="lose";
+  playerName = prompt("Game Over! Enter your name:") || "Player";
+  leaderboard.addScore(playerName, score);
+  updateLeaderboard();
+}
 }
 
 /* ================= UPDATE ================= */
@@ -165,6 +385,9 @@ if(state!=="play") return;
 /* FAST OXYGEN LOSS */
 oxygen-=0.06;
 if(oxygen<=0) loseLife();
+
+/* SCORE INCREASES WITH POSITION */
+score += 0.01;
 
 /* movement */
 if(keys["ArrowRight"]) player.vx=5;
@@ -195,9 +418,9 @@ player.jumps=2;
 }
 
 /* camera */
-cameraX=player.x-400;
+cameraX=player.x-canvas.width/3;
 if(cameraX<0) cameraX=0;
-if(cameraX>WORLD_WIDTH-1200) cameraX=WORLD_WIDTH-1200;
+if(cameraX>WORLD_WIDTH-canvas.width) cameraX=WORLD_WIDTH-canvas.width;
 
 /* platforms */
 platforms.forEach(p=>{
@@ -213,6 +436,7 @@ oxygenCoins.forEach(c=>{
 if(!c.taken && hit(player,{x:c.x,y:c.y,w:20,h:20})){
 c.taken=true;
 oxygen=Math.min(100,oxygen+10);
+score+=50;
 }
 });
 
@@ -228,6 +452,7 @@ for(let i=bullets.length-1;i>=0;i--){
 if(hit(bullets[i],p)){
 plaques.splice(plaques.indexOf(p),1);
 bullets.splice(i,1);
+score+=100;
 break;
 }
 }
@@ -250,6 +475,7 @@ for(let i=bullets.length-1;i>=0;i--){
 if(hit(bullets[i],p)){
 finalWave.splice(finalWave.indexOf(p),1);
 bullets.splice(i,1);
+score+=150;
 break;
 }
 }
@@ -270,6 +496,10 @@ heartbeat(0.08 + (1-oxygen/100)*0.2);
 /* WIN */
 if(hit(player,heart)){
 state="win";
+playerName = prompt("You won! Enter your name:") || "Player";
+score += 1000;
+leaderboard.addScore(playerName, score);
+updateLeaderboard();
 }
 }
 
@@ -297,34 +527,40 @@ ctx.globalAlpha=1;
 
 /* ================= MENU ================= */
 function drawMenu(){
-ctx.clearRect(0,0,1200,650);
+ctx.clearRect(0,0,canvas.width,canvas.height);
 ctx.fillStyle="#8b0000";
-ctx.fillRect(0,0,1200,650);
+ctx.fillRect(0,0,canvas.width,canvas.height);
 
 ctx.fillStyle="#fff";
 ctx.textAlign="center";
 
-ctx.font="50px Quicksand";
-ctx.fillText("❤️ Angina Adventure",600,120);
+const fontSize = canvas.width > 800 ? 50 : 35;
+ctx.font=fontSize+"px Quicksand";
+ctx.fillText("❤️ Angina Adventure",canvas.width/2,60);
 
-ctx.font="18px Quicksand";
-ctx.fillText("Collect oxygen. Survive plaques. Reach the heart.",600,240);
-ctx.fillText("Final area gets harder with a plaque rush.",600,270);
+ctx.font="16px Quicksand";
+ctx.fillText("Collect oxygen. Survive plaques. Reach the heart.",canvas.width/2,140);
+ctx.fillText("Final area gets harder with a plaque rush.",canvas.width/2,165);
 
-ctx.fillText("Arrow Keys Move | SPACE Jump | F Shoot",600,340);
+if (canvas.width > 800) {
+  ctx.fillText("Arrow Keys Move | SPACE Jump | F Shoot",canvas.width/2,240);
+} else {
+  ctx.fillText("Use buttons on screen to play",canvas.width/2,240);
+}
 
 ctx.fillStyle="#00ff99";
-ctx.fillText("Press ENTER to start",600,500);
+ctx.font="18px Quicksand";
+ctx.fillText("Press ENTER to start",canvas.width/2,canvas.height-80);
 }
 
 /* ================= DRAW ================= */
 function draw(){
 
-ctx.clearRect(0,0,1200,650);
+ctx.clearRect(0,0,canvas.width,canvas.height);
 
 /* oxygen pain overlay */
 ctx.fillStyle=`rgba(0,0,0,${1-oxygen/100})`;
-ctx.fillRect(0,0,1200,650);
+ctx.fillRect(0,0,canvas.width,canvas.height);
 
 /* platforms */
 platforms.forEach(p=>{
@@ -370,19 +606,26 @@ drawHeart(heart.x-cameraX,heart.y,80);
 
 /* UI */
 ctx.fillStyle="#fff";
-ctx.font="18px Quicksand";
+ctx.font="16px Quicksand";
 ctx.fillText("Lives: "+lives,20,30);
-ctx.fillText("Oxygen: "+Math.floor(oxygen),20,60);
+ctx.fillText("Oxygen: "+Math.floor(oxygen),20,55);
+ctx.fillText("Score: "+Math.floor(score),20,80);
 
 /* win/lose */
 if(state==="lose"){
-ctx.font="60px Quicksand";
-ctx.fillText("ANGINA ATTACK",300,300);
+ctx.font="40px Quicksand";
+ctx.textAlign="center";
+ctx.fillText("ANGINA ATTACK",canvas.width/2,canvas.height/2);
+ctx.font="16px Quicksand";
+ctx.fillText("Press R to restart",canvas.width/2,canvas.height/2+50);
 }
 
 if(state==="win"){
-ctx.font="60px Quicksand";
-ctx.fillText("HEART REACHED!",320,300);
+ctx.font="40px Quicksand";
+ctx.textAlign="center";
+ctx.fillText("HEART REACHED!",canvas.width/2,canvas.height/2);
+ctx.font="16px Quicksand";
+ctx.fillText("Press R to restart",canvas.width/2,canvas.height/2+50);
 }
 }
 
@@ -390,7 +633,10 @@ ctx.fillText("HEART REACHED!",320,300);
 function loop(){
 
 if(state==="menu" && keys["Enter"]) reset();
-if(state==="lose" && keys["r"]) reset();
+if((state==="lose" || state==="win") && keys["r"]) {
+  state="menu";
+  keys["r"]=false;
+}
 
 update();
 
@@ -400,6 +646,7 @@ else draw();
 requestAnimationFrame(loop);
 }
 
+updateLeaderboard();
 loop();
 
 </script>
